@@ -17,9 +17,11 @@ namespace CShark_lab10
 
         static async Task Main(string[] args)
         {
-            //using (ApplicationContext context = new ApplicationContext()) { }
             apiKey = args[0];//Console.ReadLine();
             pswd = args[1];//Console.ReadLine();
+
+            //using (ApplicationContext context = new ApplicationContext()) { context.SaveChanges(); }
+
             await foreach (var s in GetTickerFromFile(file))
             {
                 await SetTickerToDB(httpClient, s);
@@ -36,7 +38,7 @@ namespace CShark_lab10
             var ticker = context.Tickers.Include(p => p.Prices).Include(t => t.TodaysCondition).Where(t => t.Ticker == userTicker).FirstOrDefault();
             for(int i = 0; i < ticker.Prices.Count; i++)
             {
-                Console.WriteLine($"{ticker.Prices[i].Price}\t{ticker.TodaysCondition[i].State}");
+                Console.WriteLine($"{ticker.Prices[i].Price}\t{ticker.TodaysCondition.State}");
             }
             Console.WriteLine();
         }
@@ -46,68 +48,68 @@ namespace CShark_lab10
             try
             {
                 using ApplicationContext context = new ApplicationContext();
-
-                Tickers ticker = await GetTickerFromDB(context, readedTicker); // получаем тикер из бд или создаем
-
                 string json = await httpClient.GetStringAsync(url); // получаем цены
+
                 PricesDeserializer? deserializedPrices = JsonSerializer.Deserialize<PricesDeserializer>(json); // массив цен
                 if (deserializedPrices is null || deserializedPrices.Prices is null || deserializedPrices.Prices.Length == 0) throw new Exception();
-
-                await SetPriceToDB(context, deserializedPrices, ticker.Id);
-                await SetTodaysConditionToDB(context, deserializedPrices, ticker.Id);
+                
+                Tickers ticker = GetTickerFromDB(context, readedTicker); // получаем тикер из бд или создаем
+                SetPriceToDB(context, deserializedPrices, ticker.Id);
+                SetTodaysConditionToDB(context, deserializedPrices, ticker.Id);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"Exception on {readedTicker}\n{ex}\n");
+                Console.WriteLine($"Exception on {readedTicker}: 404\n");
             }
 
         }
-        static async Task<Tickers> GetTickerFromDB(ApplicationContext context, string ticker) // получаем тикер из бд или создаем тикер
+        static Tickers GetTickerFromDB(ApplicationContext context, string ticker) // получаем тикер из бд или создаем тикер
         {
-            Tickers? Ticker = context.Tickers.FirstOrDefault(t => t.Ticker == ticker); // ищем тикер в бд
+            Tickers? Ticker = context.Tickers/*.Include(t => t.Prices).Include(t => t.TodaysCondition)*/.FirstOrDefault(t => t.Ticker == ticker); // ищем тикер в бд
             if (Ticker is null)
             {
                 Ticker = new Tickers { Ticker = ticker }; // если не находим - сощдаем новый
-                await context.AddAsync(Ticker);
-                await context.SaveChangesAsync();
+                context.Add(Ticker);
+                context.SaveChanges();
             }
             return Ticker;
         }
-        static async Task SetPriceToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
+        static void SetPriceToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
         {
             int size = deserializedPrices.Prices.Length; // размер массива с ценами
             List<Prices> prices = new(size);
             DateOnly date = dateFrom;
 
             var pricesFromDB = context.Prices.Where(p => p.TickerId == TickerId && p.Date >= date).ToList(); // список цен 
+            var comparer = new PricesComparer();
             for (int i = 0; i < size; i++)
             {
                 var newPrice = new Prices { TickerId = TickerId, Price = deserializedPrices.Prices[i], Date = date };
-                if (pricesFromDB.Count > 0 && pricesFromDB.Contains(newPrice)) continue; // если цена существует, не ддобаляем ничего
-                prices.Add(newPrice);
                 date = date.AddDays(1); // увеличиваем дату на день
+                if (pricesFromDB.Count > 0 && pricesFromDB.Contains(newPrice, comparer)) continue; // если цена существует, не ддобаляем ничего
+                prices.Add(newPrice);
             }
 
-            await context.AddRangeAsync(prices);
-            await context.SaveChangesAsync();
+            context.AddRange(prices);
+            context.SaveChanges();
         }
-        static async Task SetTodaysConditionToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
+        static void SetTodaysConditionToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
         {
-            int size = deserializedPrices.Prices.Length; // размер массива с ценами
-            List<TodaysCondition> conditions = new(size); // массив для таблицы TodaysConditions
-
-            for (int i = 0; i < size; i++)
+            var todaysCondition = context.TodaysConditions.Where(t => t.TickerId == TickerId).FirstOrDefault();
+            if (todaysCondition is null)
             {
+                int size = deserializedPrices.Prices.Length; // размер массива с ценами
                 string state;
-                if (i - 1 <= 0) continue;
-                else if (deserializedPrices.Prices[i] > deserializedPrices.Prices[i - 1]) { state = "Up"; }
-                else if (deserializedPrices.Prices[i] == deserializedPrices.Prices[i - 1]) { state = "=="; }
-                else { state = "Down"; }
-                conditions.Add(new TodaysCondition { TickerId = TickerId, State = state });
-            }
 
-            await context.AddRangeAsync(conditions);
-            await context.SaveChangesAsync();
+                if (deserializedPrices.Prices[size - 1] > deserializedPrices.Prices[size - 2]) { state = "Up"; }
+                else if (deserializedPrices.Prices[size - 1] == deserializedPrices.Prices[size - 2]) { state = "=="; }
+                else { state = "Down"; }
+
+                todaysCondition = new TodaysCondition { TickerId = TickerId, State = state };
+                if (context.TodaysConditions.Contains(todaysCondition)) { return; }
+                context.AddRange(todaysCondition);
+                context.SaveChanges();
+            }
         }
         static async IAsyncEnumerable<string> GetTickerFromFile(string file) // асинхронная корутина для считывания файла
         {
