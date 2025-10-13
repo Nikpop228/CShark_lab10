@@ -20,15 +20,15 @@ namespace CShark_lab10
         }
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            //optionsBuilder.UseSqlServer(@"Server=localhost;Database=lab10;Trusted_Connection=True; TrustServerCertificate=True");
-            optionsBuilder.UseNpgsql($"Host=localhost;Port=5432;Database=tickersdb;Username=postgres;Password=postgres", options =>
-            {
-                options.CommandTimeout(300); // 5 минут
-                options.EnableRetryOnFailure(
-                    maxRetryCount: 3,
-                    maxRetryDelay: TimeSpan.FromSeconds(30),
-                    errorCodesToAdd: null);
-            });
+            optionsBuilder.UseSqlServer(@"Server=localhost;Database=lab10;Trusted_Connection=True; TrustServerCertificate=True");
+            //optionsBuilder.UseNpgsql($"Host=localhost;Port=5433;Database=tickersdb;Username=postgres;Password=351802", options =>
+            //{
+            //    options.CommandTimeout(300); // 5 минут
+            //    options.EnableRetryOnFailure(
+            //        maxRetryCount: 3,
+            //        maxRetryDelay: TimeSpan.FromSeconds(30),
+            //        errorCodesToAdd: null);
+            //});
         }
     }
 

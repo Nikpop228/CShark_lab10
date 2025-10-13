@@ -23,7 +23,7 @@ namespace CShark_lab10
             pswd = args[1];
             using StreamReader reader = new(file);
             object locker = new object();
-            using (ApplicationContext context = new ApplicationContext()) { context.Database.EnsureDeleted(); context.SaveChanges(); }
+            //using (ApplicationContext context = new ApplicationContext()) { context.Database.EnsureDeleted(); context.SaveChanges(); }
 
             int count = 0;
             var tasks = new List<Task>();
@@ -48,11 +48,12 @@ namespace CShark_lab10
                             Include(t => t.TodaysCondition).
                             Where(t => t.Ticker == userTicker).
                             FirstOrDefault();
-            for(int i = 0; i < ticker.Prices.Count; i++)
-            {
-                Console.WriteLine($"{ticker.Prices[i].Price}\t{ticker.TodaysCondition.State}");
-            }
-            Console.WriteLine();
+            //for(int i = 0; i < ticker.Prices.Count; i++)
+            //{
+            //    Console.WriteLine($"{ticker.Prices[i].Price}\t{ticker.TodaysCondition.State}");
+            //}
+            Console.WriteLine($"{ticker.Prices.Last()} {ticker.TodaysCondition.State}");
+            //Console.WriteLine();
         }
         static async Task SetTickerAndFriendsToDB(HttpClient httpClient, string readedTicker, object locker)
         {
@@ -87,57 +88,50 @@ namespace CShark_lab10
         }
         static Tickers CreateTickerInDB(ApplicationContext context, string ticker) // получаем тикер из бд или создаем тикер
         {
-                Tickers? Ticker = null;// context.Tickers.AsNoTracking().FirstOrDefault(t => t.Ticker == ticker); // ищем тикер в бд
-                if (Ticker is null)
-                {
-                    Ticker = new Tickers { Ticker = ticker }; // если не находим - сощдаем новый
-                    context.Add(Ticker);
-                    context.SaveChanges();
-                }
-                return Ticker;
-        }
-        static async void SetPriceToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
-        {
-            try
+            Tickers? Ticker = context.Tickers.AsNoTracking().FirstOrDefault(t => t.Ticker == ticker); // ищем тикер в бд
+            if (Ticker is null)
             {
-                int size = deserializedPrices.Prices.Length; // размер массива с ценами
-                List<Prices> prices = new(size);
-                DateOnly date = dateFrom;
-
-                //var pricesFromDB = context.Prices.Where(p => p.TickerId == TickerId && p.Date >= date).AsNoTracking().ToList(); // список цен 
-                //var comparer = new PricesComparer();
-                for (int i = 0; i < size; i++)
-                {
-                    var newPrice = new Prices { TickerId = TickerId, Price = deserializedPrices.Prices[i], Date = date };
-                    date = date.AddDays(1); // увеличиваем дату на день
-                                            //if (pricesFromDB.Count > 0 && pricesFromDB.Contains(newPrice, comparer)) continue; // если цена существует, не ддобаляем ничего
-                    prices.Add(newPrice);
-                }
-
-                context.AddRange(prices);
+                Ticker = new Tickers { Ticker = ticker }; // если не находим - сощдаем новый
+                context.Add(Ticker);
                 context.SaveChanges();
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex);
-            }
+            return Ticker;
         }
-        static async void SetTodaysConditionToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
+        static void SetPriceToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
+        {
+            int size = deserializedPrices.Prices.Length; // размер массива с ценами
+            List<Prices> prices = new(size);
+            DateOnly date = dateFrom;
+
+            var pricesFromDB = context.Prices.Where(p => p.TickerId == TickerId && p.Date >= date).AsNoTracking().ToList(); // список цен 
+            var comparer = new PricesComparer();
+            for (int i = 0; i < size; i++)
+            {
+                var newPrice = new Prices { TickerId = TickerId, Price = deserializedPrices.Prices[i], Date = date };
+                date = date.AddDays(1); // увеличиваем дату на день
+                if (pricesFromDB.Count > 0 && pricesFromDB.Contains(newPrice, comparer)) continue; // если цена существует, не ддобаляем ничего
+                prices.Add(newPrice);
+            }
+
+            context.AddRange(prices);
+            context.SaveChanges();
+        }
+        static void SetTodaysConditionToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
         {
             try
             {
-                TodaysCondition? todaysCondition = null;//context.TodaysConditions.Where(t => t.TickerId == TickerId).AsNoTracking().FirstOrDefault();
+                TodaysCondition? todaysCondition = context.TodaysConditions.Where(t => t.TickerId == TickerId).AsNoTracking().FirstOrDefault();
                 if (todaysCondition is null)
                 {
                     int size = deserializedPrices.Prices.Length; // размер массива с ценами
                     string state;
 
-                    if (size != null && deserializedPrices.Prices[size - 1] > deserializedPrices.Prices[size - 2]) { state = "Up"; }
-                    else if (deserializedPrices.Prices[size - 1] == deserializedPrices.Prices[size - 2]) { state = "=="; }
-                    else { state = "Down"; }
+                    if (size > 1 && deserializedPrices.Prices[size - 1] > deserializedPrices.Prices[size - 2]) { state = "Up"; }
+                    else if (size > 1 && deserializedPrices.Prices[size - 1] < deserializedPrices.Prices[size - 2]) { state = "Down"; }
+                    else { state = "=="; }
 
                     todaysCondition = new TodaysCondition { TickerId = TickerId, State = state };
-                    //if (context.TodaysConditions.Contains(todaysCondition)) { return; }
+                    if (context.TodaysConditions.Contains(todaysCondition)) { return; }
                     context.AddRange(todaysCondition);
                     context.SaveChanges();
                 }
