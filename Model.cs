@@ -1,10 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 
 namespace CShark_lab10
 {
@@ -20,8 +15,8 @@ namespace CShark_lab10
         }
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder.UseSqlServer(@"Server=localhost;Database=lab10;Trusted_Connection=True; TrustServerCertificate=True");
-            //optionsBuilder.UseNpgsql($"Host=localhost;Port=5433;Database=tickersdb;Username=postgres;Password=351802", options =>
+            //optionsBuilder.UseSqlServer(@"Server=localhost;Database=lab10;Trusted_Connection=True; TrustServerCertificate=True");
+            optionsBuilder.UseNpgsql($"Host=localhost;Port=5433;Database=ntickersdb;Username=postgres;Password=351802");//, options =>
             //{
             //    options.CommandTimeout(300); // 5 минут
             //    options.EnableRetryOnFailure(
@@ -62,7 +57,7 @@ namespace CShark_lab10
         public Tickers? Ticker { get; set; }
         public bool Equals(Prices? y)
         {
-            if(y is Prices) return TickerId == y.TickerId && Price == y.Price && Date == y.Date;
+            if (y is Prices) return TickerId == y.TickerId && Price == y.Price && Date == y.Date;
             return false;
         }
     }

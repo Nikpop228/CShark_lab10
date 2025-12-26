@@ -1,21 +1,17 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
-using Npgsql.Internal;
-using System.Diagnostics;
-using System.Globalization;
+﻿//using BenchmarkDotNet.Attributes;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace CShark_lab10
 {
     internal class Program
     {
-        private static  HttpClient httpClient = new();
-        private const   string     file = @"C:\Users\nikpop\Desktop\ticker.txt";
-        private static  string?    apiKey; // from console
-        public  static  string?    pswd;
-        private static  DateOnly   dateFrom = new(2025, 10, 1);
-        private static  DateOnly   dateTo = new(2025, 10, 4);
+        private static HttpClient httpClient = new();
+        private const string file = @"C:\Users\nikpop\Desktop\ticker.txt";
+        private static string? apiKey; // from console
+        public static string? pswd;
+        private static DateOnly dateFrom = new(2025, 10, 1);
+        private static DateOnly dateTo = new(2025, 10, 4);
 
         static async Task Main(string[] args)
         {
@@ -23,7 +19,7 @@ namespace CShark_lab10
             pswd = args[1];
             using StreamReader reader = new(file);
             object locker = new object();
-            //using (ApplicationContext context = new ApplicationContext()) { context.Database.EnsureDeleted(); context.SaveChanges(); }
+            using (ApplicationContext context = new ApplicationContext()) { context.Database.EnsureDeleted(); context.SaveChanges(); context.Database.EnsureCreated(); context.SaveChanges(); }
 
             int count = 0;
             var tasks = new List<Task>();
@@ -38,10 +34,10 @@ namespace CShark_lab10
             string? userTicker = Console.ReadLine();
             PrintTickerInfo(userTicker);
         }
-
+        //[Benchmark]
         static void PrintTickerInfo(string? userTicker) // вывод тикера в консоль
         {
-            if(userTicker == null) return;
+            if (userTicker == null) return;
             using ApplicationContext context = new ApplicationContext();
             var ticker = context.Tickers.
                             Include(p => p.Prices).
@@ -55,6 +51,7 @@ namespace CShark_lab10
             Console.WriteLine($"{ticker.Prices.Last()} {ticker.TodaysCondition.State}");
             //Console.WriteLine();
         }
+        //[Benchmark]
         static async Task SetTickerAndFriendsToDB(HttpClient httpClient, string readedTicker, object locker)
         {
             string url = $"https://api.marketdata.app/v1/stocks/candles/D/" +
@@ -70,40 +67,42 @@ namespace CShark_lab10
                 {
                     throw new Exception("Нулевой тикер");
                 }
-                lock (locker)
-                {
+                //lock (locker)
+                //{
                     using ApplicationContext context = new ApplicationContext();
                     if (!context.Database.CanConnect()) throw new Exception("Невозможно подключиться к базе");
-                    Tickers ticker = CreateTickerInDB(context, readedTicker); // получаем тикер из бд или создаем
-                    SetPriceToDB(context, deserializedPrices, ticker.Id);
-                    SetTodaysConditionToDB(context, deserializedPrices, ticker.Id);
+                    Tickers ticker = await CreateTickerInDB(context, readedTicker); // получаем тикер из бд или создаем
+                    await SetPriceToDB(context, deserializedPrices, ticker.Id);
+                    await SetTodaysConditionToDB(context, deserializedPrices, ticker.Id);
                     //context.SaveChanges();
                     Console.WriteLine("Таблицы записаны");
-                }
+                //}
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Exception on {readedTicker}: {ex}\n");
             }
         }
-        static Tickers CreateTickerInDB(ApplicationContext context, string ticker) // получаем тикер из бд или создаем тикер
+        //[Benchmark]
+        static async Task<Tickers> CreateTickerInDB(ApplicationContext context, string ticker) // получаем тикер из бд или создаем тикер
         {
-            Tickers? Ticker = context.Tickers.AsNoTracking().FirstOrDefault(t => t.Ticker == ticker); // ищем тикер в бд
+            Tickers? Ticker = context.Tickers.FirstOrDefault(t => t.Ticker == ticker); // ищем тикер в бд
             if (Ticker is null)
             {
                 Ticker = new Tickers { Ticker = ticker }; // если не находим - сощдаем новый
-                context.Add(Ticker);
-                context.SaveChanges();
+                await context.AddAsync(Ticker);
+                await context.SaveChangesAsync();
             }
             return Ticker;
         }
-        static void SetPriceToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
+       // [Benchmark]
+        static async Task SetPriceToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
         {
             int size = deserializedPrices.Prices.Length; // размер массива с ценами
             List<Prices> prices = new(size);
             DateOnly date = dateFrom;
 
-            var pricesFromDB = context.Prices.Where(p => p.TickerId == TickerId && p.Date >= date).AsNoTracking().ToList(); // список цен 
+            var pricesFromDB = context.Prices.Where(p => p.TickerId == TickerId && p.Date >= date).ToList(); // список цен 
             var comparer = new PricesComparer();
             for (int i = 0; i < size; i++)
             {
@@ -113,14 +112,15 @@ namespace CShark_lab10
                 prices.Add(newPrice);
             }
 
-            context.AddRange(prices);
-            context.SaveChanges();
+            await context.AddRangeAsync(prices);
+            await context.SaveChangesAsync();
         }
-        static void SetTodaysConditionToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
+        //[Benchmark]
+        static async Task SetTodaysConditionToDB(ApplicationContext context, PricesDeserializer deserializedPrices, int TickerId)
         {
             try
             {
-                TodaysCondition? todaysCondition = context.TodaysConditions.Where(t => t.TickerId == TickerId).AsNoTracking().FirstOrDefault();
+                TodaysCondition? todaysCondition = context.TodaysConditions.Where(t => t.TickerId == TickerId).FirstOrDefault();
                 if (todaysCondition is null)
                 {
                     int size = deserializedPrices.Prices.Length; // размер массива с ценами
@@ -132,8 +132,8 @@ namespace CShark_lab10
 
                     todaysCondition = new TodaysCondition { TickerId = TickerId, State = state };
                     if (context.TodaysConditions.Contains(todaysCondition)) { return; }
-                    context.AddRange(todaysCondition);
-                    context.SaveChanges();
+                    await context.AddAsync(todaysCondition);
+                    await context.SaveChangesAsync();
                 }
             }
             catch (Exception ex)
@@ -141,6 +141,7 @@ namespace CShark_lab10
                 Console.WriteLine(ex);
             }
         }
+       // [Benchmark]
         static async IAsyncEnumerable<string> GetTickerFromFile(string file, StreamReader reader) // асинхронная корутина для считывания файла
         {
             string? text;
